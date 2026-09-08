@@ -51,7 +51,8 @@ const routeArticle =
 /** Empty until a random indexed article is picked (or `?article=` pins one). */
 const articleTitle = ref(routeArticle ?? '')
 
-const screen = ref<Screen>('search')
+/** Starts on the article — the reader opens search from the chrome header. */
+const screen = ref<Screen>('article')
 const searchView = ref<SearchView>('suggestions')
 const query = ref('')
 
