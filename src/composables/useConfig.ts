@@ -6,7 +6,6 @@ import {
   DEFAULT_CONFIG,
   isDefaultUserPageLists,
   langForUser,
-  loadConfig,
   resetUserPageLists,
   saveConfig,
   type ConfigAppPlatform,
@@ -17,10 +16,14 @@ import {
   type PageListKey,
   type UserPageLists,
 } from '@/config'
-import { applyAppPlatform } from '@/app-platform'
-import { applyThemePreference, applyWebSkinPreference } from '@/theme'
+import {
+  onAppPlatformSettingChanged,
+  onThemeSettingChanged,
+  onWebSkinSettingChanged,
+  protowikiConfig,
+} from '@/appearance'
 
-const config = ref<Config>(loadConfig())
+const config = protowikiConfig
 
 watch(
   config,
@@ -33,21 +36,21 @@ watch(
 watch(
   () => config.value.theme,
   (preference) => {
-    applyThemePreference(preference)
+    onThemeSettingChanged(preference)
   },
 )
 
 watch(
   () => config.value.webSkin,
   (webSkin) => {
-    applyWebSkinPreference(webSkin)
+    onWebSkinSettingChanged(webSkin)
   },
 )
 
 watch(
   () => config.value.appPlatform,
   (platform) => {
-    applyAppPlatform(platform)
+    onAppPlatformSettingChanged(platform)
   },
 )
 
