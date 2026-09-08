@@ -106,8 +106,9 @@ const attribution = computed(() => formatAttributionLine(props.answer))
     -0.15em 0 0 var(--background-color-warning-subtle, #fdf2d5);
   color: var(--color-base, #202122);
   font-family: var(--font-family-serif, 'Source Serif 4', serif);
-  font-size: var(--font-size-small, 0.875rem);
-  line-height: var(--line-height-small, 1.375);
+  /* Codex Blockquote type: 16px on a 26px line. */
+  font-size: var(--font-size-medium, 1rem);
+  line-height: var(--line-height-medium, 1.625);
 }
 
 .mss-card__source {
