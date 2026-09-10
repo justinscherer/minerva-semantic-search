@@ -188,3 +188,81 @@ export async function fetchPageSummaries(
 export function articleUrl(title: string, lang = 'en'): string {
   return `https://${wikiHostFromLang(lang)}/wiki/${encodeURIComponent(title.replace(/ /g, '_'))}`
 }
+
+export interface ArticleSearchResult {
+  pageid: number
+  title: string
+  /** Snippet markup, matched terms wrapped in `<span class="searchmatch">`. */
+  snippetHtml: string
+}
+
+interface ActionApiSearchHit {
+  pageid?: number
+  title?: string
+  snippet?: string
+}
+
+function escapeHtml(value: string): string {
+  return value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+}
+
+/**
+ * Keep only the highlight spans CirrusSearch emits. Snippets go through
+ * `v-html`, so everything else is reduced to its text.
+ */
+function sanitizeSnippet(snippet: string): string {
+  const doc = new DOMParser().parseFromString(`<div>${snippet}</div>`, 'text/html')
+  const root = doc.body.firstElementChild
+  if (!root) return ''
+
+  let html = ''
+  for (const node of Array.from(root.childNodes)) {
+    const text = escapeHtml(node.textContent ?? '')
+    const isHighlight =
+      node.nodeType === Node.ELEMENT_NODE && (node as Element).classList.contains('searchmatch')
+
+    html += isHighlight ? `<span class="searchmatch">${text}</span>` : text
+  }
+
+  return html
+}
+
+/**
+ * Full-text search, as `Special:Search` runs it. Snippets arrive with the
+ * query's terms already marked up by CirrusSearch.
+ */
+export async function fetchArticleSearchResults(
+  query: string,
+  options: TypeaheadOptions = {},
+): Promise<ArticleSearchResult[]> {
+  const trimmed = query.trim()
+  if (!trimmed.length) return []
+
+  const lang = options.lang ?? 'en'
+  const url = actionApiUrl(lang, {
+    list: 'search',
+    srsearch: trimmed,
+    srlimit: String(options.limit ?? 10),
+    srnamespace: '0',
+    srprop: 'snippet',
+  })
+
+  const response = await fetch(url, {
+    signal: options.signal,
+    headers: wikimediaApiFetchHeaders('semantic-search-fulltext'),
+  })
+
+  if (!response.ok) {
+    throw new Error(`HTTP ${response.status}`)
+  }
+
+  const data = (await response.json()) as { query?: { search?: ActionApiSearchHit[] } }
+
+  return (data.query?.search ?? [])
+    .filter((hit): hit is ActionApiSearchHit & { title: string } => typeof hit.title === 'string')
+    .map((hit) => ({
+      pageid: hit.pageid ?? 0,
+      title: hit.title,
+      snippetHtml: sanitizeSnippet(hit.snippet ?? ''),
+    }))
+}

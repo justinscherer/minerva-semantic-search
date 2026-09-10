@@ -29,12 +29,20 @@ import SemanticEntryPoint from './SemanticEntryPoint.vue'
 import { askArticles, askQuestions, isReadableIndexTitle, normalizeIndexTitle } from './askApi'
 import { clearPassageHighlight, highlightPassage } from './highlightPassage'
 import { fetchSemanticAnswers, type SemanticAnswer } from './semanticAnswers'
-import { fetchRelatedPages, fetchTypeaheadPages, type WikiPageSummary } from './wikiPages'
+import ArticleSearchResults from './ArticleSearchResults.vue'
+import {
+  fetchArticleSearchResults,
+  fetchRelatedPages,
+  fetchTypeaheadPages,
+  type ArticleSearchResult,
+  type WikiPageSummary,
+} from './wikiPages'
 
 /** Stand-in when the index can't be listed — `Cat` is reliably indexed. */
 const FALLBACK_ARTICLE = 'Cat'
 const TYPEAHEAD_DEBOUNCE_MS = 180
 const SKELETON_COUNT = 3
+const ARTICLE_RESULT_LIMIT = 10
 
 type Screen = 'article' | 'search'
 type SearchView = 'suggestions' | 'typeahead' | 'semantic'
@@ -62,6 +70,8 @@ const typeaheadPages = ref<WikiPageSummary[]>([])
 const semanticQuery = ref('')
 const answers = ref<SemanticAnswer[]>([])
 const isSearching = ref(false)
+const articleResults = ref<ArticleSearchResult[]>([])
+const isSearchingArticles = ref(false)
 const searchError = ref<string | null>(null)
 const examples = ref<string[]>([])
 /** Passage to mark and scroll to once the next article body renders. */
@@ -74,13 +84,34 @@ let debounceHandle: ReturnType<typeof setTimeout> | undefined
 
 const trimmedQuery = computed(() => query.value.trim())
 const showEntryPoint = computed(() => trimmedQuery.value.length >= 3)
-const hasNoAnswers = computed(
+
+/** Neither the index nor full-text search had anything for this query. */
+const hasNoResults = computed(
   () =>
     searchView.value === 'semantic' &&
     !isSearching.value &&
+    !isSearchingArticles.value &&
     !searchError.value &&
-    !answers.value.length,
+    !answers.value.length &&
+    !articleResults.value.length,
 )
+
+/** "3 highlights • 4 articles", dropping a half that came back empty. */
+const resultCounts = computed(() => {
+  if (isSearching.value) return ''
+
+  const parts: string[] = []
+  if (answers.value.length) {
+    parts.push(`${answers.value.length} highlight${answers.value.length === 1 ? '' : 's'}`)
+  }
+  if (articleResults.value.length) {
+    parts.push(
+      `${articleResults.value.length} article${articleResults.value.length === 1 ? '' : 's'}`,
+    )
+  }
+
+  return parts.join(' • ')
+})
 
 const articleHeaderRight = computed((): HeaderItem[] => [
   { type: 'button', icon: 'search', label: 'Search', onClick: openSearch },
@@ -197,6 +228,11 @@ async function loadExamples(): Promise<void> {
   }
 }
 
+/**
+ * Runs the two legs of the results page in order: semantic answers first, then
+ * full-text search once those have resolved, so the quote cards aren't held
+ * back by the second request.
+ */
 async function runSemanticSearch(value: string): Promise<void> {
   const trimmed = value.trim()
   if (!trimmed.length) return
@@ -210,17 +246,37 @@ async function runSemanticSearch(value: string): Promise<void> {
   isSearching.value = true
   searchError.value = null
   answers.value = []
+  articleResults.value = []
 
   try {
     const found = await fetchSemanticAnswers(trimmed, { lang: lang.value, signal })
     if (signal.aborted) return
     answers.value = found
-    if (!found.length) void loadExamples()
   } catch (error) {
     if (signal.aborted) return
     searchError.value = error instanceof Error ? error.message : 'Semantic search failed.'
   } finally {
     if (!signal.aborted) isSearching.value = false
+  }
+
+  if (signal.aborted) return
+
+  isSearchingArticles.value = true
+  try {
+    articleResults.value = await fetchArticleSearchResults(trimmed, {
+      lang: lang.value,
+      limit: ARTICLE_RESULT_LIMIT,
+      signal,
+    })
+  } catch {
+    if (!signal.aborted) articleResults.value = []
+  } finally {
+    if (!signal.aborted) isSearchingArticles.value = false
+  }
+
+  // Only offer indexed examples when nothing at all came back.
+  if (!signal.aborted && !answers.value.length && !articleResults.value.length) {
+    void loadExamples()
   }
 }
 
@@ -238,6 +294,10 @@ function openArticle(title: string, passage: string | null = null): void {
 
 function onSelectPage(page: WikiPageSummary): void {
   openArticle(page.title)
+}
+
+function onSelectArticleResult(result: ArticleSearchResult): void {
+  openArticle(result.title)
 }
 
 function onSelectAnswer(answer: SemanticAnswer): void {
@@ -304,7 +364,12 @@ void loadRelatedPages()
     </ChromeWrapper>
 
     <div v-else class="mss" data-skin="mobile">
-      <SearchHeader v-model="query" :loading="isSearching" @submit="onSubmit" @back="onBack" />
+      <SearchHeader
+        v-model="query"
+        :loading="isSearching || isSearchingArticles"
+        @submit="onSubmit"
+        @back="onBack"
+      />
 
       <div class="mss__body">
         <template v-if="searchView === 'suggestions'">
@@ -323,12 +388,20 @@ void loadRelatedPages()
         <template v-else>
           <div class="mss__question">
             <CdxIcon class="mss__question-icon" :icon="cdxIconQuotes" size="small" />
-            <p class="mss__question-text">
-              {{ semanticQuery }}
-            </p>
+            <div class="mss__question-text">
+              <p class="mss__question-query">
+                {{ semanticQuery }}
+              </p>
+              <p v-if="resultCounts" class="mss__question-counts">
+                {{ resultCounts }}
+              </p>
+            </div>
           </div>
 
-          <div class="mss__answers">
+          <div
+            v-if="isSearching || answers.length || searchError || hasNoResults"
+            class="mss__answers"
+          >
             <template v-if="isSearching">
               <QuoteCardSkeleton v-for="index in SKELETON_COUNT" :key="`skeleton-${index}`" />
             </template>
@@ -338,10 +411,9 @@ void loadRelatedPages()
                 {{ searchError }}
               </CdxMessage>
 
-              <template v-if="hasNoAnswers">
+              <template v-if="hasNoResults">
                 <CdxMessage type="notice" :allow-user-dismiss="false">
-                  No indexed answers for “{{ semanticQuery }}”. The semantic index covers a small
-                  set of articles so far.
+                  Nothing found for “{{ semanticQuery }}” — no indexed answers and no articles.
                 </CdxMessage>
 
                 <div v-if="examples.length" class="mss__examples">
@@ -366,6 +438,13 @@ void loadRelatedPages()
               />
             </template>
           </div>
+
+          <ArticleSearchResults
+            v-if="articleResults.length"
+            :results="articleResults"
+            :lang="lang"
+            @select="onSelectArticleResult"
+          />
         </template>
       </div>
     </div>
@@ -432,9 +511,23 @@ void loadRelatedPages()
 }
 
 .mss__question-text {
+  display: flex;
+  flex: 1 1 auto;
+  min-width: 0;
+  flex-direction: column;
+}
+
+.mss__question-query {
   margin: 0;
   font-size: var(--font-size-medium, 1rem);
   line-height: var(--line-height-small, 1.375);
+}
+
+.mss__question-counts {
+  margin: 0;
+  color: var(--color-subtle, #54595d);
+  font-size: var(--font-size-small, 0.875rem);
+  line-height: var(--line-height-x-small, 1.25);
 }
 
 .mss__answers {
