@@ -44,7 +44,11 @@ const emit = defineEmits<{
 <style scoped>
 .mss-entry {
   border-bottom: var(--border-width-base, 1px) solid var(--border-color-subtle, #c8ccd1);
-  background-color: var(--background-color-progressive-subtle, #e8eeff);
+  background-color: var(--background-color-base, #fff);
+}
+
+.mss-entry:active {
+  background-color: var(--background-color-interactive-subtle, #f8f9fa);
 }
 
 .mss-entry__hit {
@@ -62,6 +66,7 @@ const emit = defineEmits<{
 }
 
 .mss-entry__title {
+  color: var(--color-progressive, #36c);
   font-weight: var(--font-weight-bold, 700);
   font-size: var(--font-size-medium, 1rem);
   line-height: var(--line-height-small, 1.375);
