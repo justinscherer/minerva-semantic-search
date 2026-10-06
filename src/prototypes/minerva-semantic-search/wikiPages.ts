@@ -238,16 +238,23 @@ function sanitizeSnippet(snippet: string): string {
   return html
 }
 
+export interface ArticleSearchPage {
+  results: ArticleSearchResult[]
+  /** Offset for the next page, or `null` when the results are exhausted. */
+  nextOffset: number | null
+}
+
 /**
  * Full-text search, as `Special:Search` runs it. Snippets arrive with the
- * query's terms already marked up by CirrusSearch.
+ * query's terms already marked up by CirrusSearch. `offset` pages through the
+ * results for the "More" affordance.
  */
 export async function fetchArticleSearchResults(
   query: string,
-  options: TypeaheadOptions = {},
-): Promise<ArticleSearchResult[]> {
+  options: TypeaheadOptions & { offset?: number } = {},
+): Promise<ArticleSearchPage> {
   const trimmed = query.trim()
-  if (!trimmed.length) return []
+  if (!trimmed.length) return { results: [], nextOffset: null }
 
   const lang = options.lang ?? 'en'
   const url = actionApiUrl(lang, {
@@ -256,6 +263,7 @@ export async function fetchArticleSearchResults(
     srlimit: String(options.limit ?? 10),
     srnamespace: '0',
     srprop: 'snippet',
+    sroffset: String(options.offset ?? 0),
   })
 
   const response = await fetch(url, {
@@ -267,13 +275,18 @@ export async function fetchArticleSearchResults(
     throw new Error(`HTTP ${response.status}`)
   }
 
-  const data = (await response.json()) as { query?: { search?: ActionApiSearchHit[] } }
+  const data = (await response.json()) as {
+    query?: { search?: ActionApiSearchHit[] }
+    continue?: { sroffset?: number }
+  }
 
-  return (data.query?.search ?? [])
+  const results = (data.query?.search ?? [])
     .filter((hit): hit is ActionApiSearchHit & { title: string } => typeof hit.title === 'string')
     .map((hit) => ({
       pageid: hit.pageid ?? 0,
       title: hit.title,
       snippetHtml: sanitizeSnippet(hit.snippet ?? ''),
     }))
+
+  return { results, nextOffset: data.continue?.sroffset ?? null }
 }

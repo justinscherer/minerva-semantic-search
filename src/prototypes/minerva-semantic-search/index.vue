@@ -12,7 +12,7 @@ definePage({
 
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
-import { CdxIcon, CdxMessage, CdxProgressBar } from '@wikimedia/codex'
+import { CdxButton, CdxIcon, CdxMessage, CdxProgressBar } from '@wikimedia/codex'
 import { cdxIconQuotes } from '@wikimedia/codex-icons'
 
 import ArticleLive from '@/components/article/ArticleLive.vue'
@@ -75,6 +75,9 @@ const answers = ref<SemanticAnswer[]>([])
 const isSearching = ref(false)
 const articleResults = ref<ArticleSearchResult[]>([])
 const isSearchingArticles = ref(false)
+/** Where the next page of lexical results starts; `null` once exhausted. */
+const nextArticleOffset = ref<number | null>(null)
+const isLoadingMore = ref(false)
 const searchError = ref<string | null>(null)
 const examples = ref<string[]>([])
 /** Passage to mark and scroll to once the next article body renders. */
@@ -249,6 +252,7 @@ async function runSemanticSearch(value: string): Promise<void> {
   searchError.value = null
   answers.value = []
   articleResults.value = []
+  nextArticleOffset.value = null
 
   try {
     const found = await fetchSemanticAnswers(trimmed, { lang: lang.value, signal })
@@ -265,13 +269,20 @@ async function runSemanticSearch(value: string): Promise<void> {
 
   isSearchingArticles.value = true
   try {
-    articleResults.value = await fetchArticleSearchResults(trimmed, {
+    const page = await fetchArticleSearchResults(trimmed, {
       lang: lang.value,
       limit: ARTICLE_RESULT_LIMIT,
       signal,
     })
+    if (!signal.aborted) {
+      articleResults.value = page.results
+      nextArticleOffset.value = page.nextOffset
+    }
   } catch {
-    if (!signal.aborted) articleResults.value = []
+    if (!signal.aborted) {
+      articleResults.value = []
+      nextArticleOffset.value = null
+    }
   } finally {
     if (!signal.aborted) isSearchingArticles.value = false
   }
@@ -315,6 +326,35 @@ function onSelectPage(page: WikiPageSummary): void {
 
 function onSelectArticleResult(result: ArticleSearchResult): void {
   openArticle(result.title)
+}
+
+/**
+ * "More" extends the lexical results only — the semantic index returns its
+ * whole answer set in one call, so there is no second page of highlights.
+ */
+async function loadMoreArticles(): Promise<void> {
+  const offset = nextArticleOffset.value
+  if (offset === null || isLoadingMore.value) return
+
+  isLoadingMore.value = true
+  try {
+    const page = await fetchArticleSearchResults(semanticQuery.value, {
+      lang: lang.value,
+      limit: ARTICLE_RESULT_LIMIT,
+      offset,
+      signal: semanticAbort?.signal,
+    })
+    articleResults.value = [...articleResults.value, ...page.results]
+    nextArticleOffset.value = page.nextOffset
+  } catch {
+    nextArticleOffset.value = null
+  } finally {
+    isLoadingMore.value = false
+  }
+}
+
+function onSwitchToClassicSearch(): void {
+  window.location.assign(specialSearchUrl(semanticQuery.value, lang.value))
 }
 
 function onSelectAnswer(answer: SemanticAnswer): void {
@@ -457,6 +497,24 @@ void loadRelatedPages()
             :lang="lang"
             @select="onSelectArticleResult"
           />
+
+          <div v-if="articleResults.length" class="mss__more">
+            <CdxButton
+              v-if="nextArticleOffset !== null"
+              action="progressive"
+              weight="primary"
+              :disabled="isLoadingMore"
+              @click="loadMoreArticles"
+            >
+              {{ isLoadingMore ? 'Loading…' : 'More' }}
+            </CdxButton>
+          </div>
+
+          <div class="mss__classic">
+            <CdxButton weight="quiet" action="progressive" @click="onSwitchToClassicSearch">
+              Switch to classic search
+            </CdxButton>
+          </div>
         </template>
       </div>
     </div>
@@ -547,6 +605,14 @@ void loadRelatedPages()
   flex-direction: column;
   gap: var(--spacing-75, 12px);
   padding: var(--spacing-75, 12px) var(--spacing-100, 16px) var(--spacing-200, 32px);
+}
+
+.mss__more {
+  padding-inline: var(--spacing-75, 12px);
+}
+
+.mss__classic {
+  padding: var(--spacing-100, 16px) var(--spacing-75, 12px) var(--spacing-150, 24px);
 }
 
 .mss__examples {

@@ -86,6 +86,8 @@ export interface ResolvedPassage {
    * passage came from a whole-article search instead.
    */
   approximate: boolean
+  /** Article section the passage sits in; absent in the lead. */
+  section?: string
 }
 
 const documentCache = new Map<string, Promise<ArticleDocument>>()
@@ -205,6 +207,25 @@ function anchoredBlock(doc: Document, segmentId: string): Element | null {
   return anchor.closest(BLOCK_SELECTOR) ?? anchor.closest('section')
 }
 
+/**
+ * Heading of the Parsoid section a block sits in. Parsoid wraps each section in
+ * `<section>` with its heading first, so the nearest one names the passage's
+ * place in the article. The lead section has no heading.
+ */
+function sectionNameOf(block: Element): string | undefined {
+  let section = block.closest('section')
+
+  while (section) {
+    const heading = section.querySelector(':scope > h1, :scope > h2, :scope > h3, :scope > h4')
+    const name = heading?.textContent?.replace(/\s+/g, ' ').trim()
+    if (name) return name
+
+    section = section.parentElement?.closest('section') ?? null
+  }
+
+  return undefined
+}
+
 function bestParagraph(
   doc: Document,
   question: string,
@@ -237,8 +258,16 @@ export function resolvePassage(
   const anchoredText = anchored ? cleanText(anchored) : ''
   const anchoredScore = anchoredText ? overlapScore(anchoredText, question) : 0
 
-  if (anchoredText.length >= MIN_PARAGRAPH_CHARS && anchoredScore >= ANCHOR_SCORE_FLOOR) {
-    return { text: bestSentenceWindow(anchoredText, question), approximate: false }
+  if (
+    anchored &&
+    anchoredText.length >= MIN_PARAGRAPH_CHARS &&
+    anchoredScore >= ANCHOR_SCORE_FLOOR
+  ) {
+    return {
+      text: bestSentenceWindow(anchoredText, question),
+      approximate: false,
+      section: sectionNameOf(anchored),
+    }
   }
 
   const fallback = bestParagraph(article.doc, question)
@@ -246,10 +275,15 @@ export function resolvePassage(
     return {
       text: bestSentenceWindow(cleanText(fallback.element), question),
       approximate: true,
+      section: sectionNameOf(fallback.element),
     }
   }
 
-  if (!anchoredText.length) return null
+  if (!anchored || !anchoredText.length) return null
 
-  return { text: bestSentenceWindow(anchoredText, question), approximate: true }
+  return {
+    text: bestSentenceWindow(anchoredText, question),
+    approximate: true,
+    section: sectionNameOf(anchored),
+  }
 }

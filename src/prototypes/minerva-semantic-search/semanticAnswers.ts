@@ -19,6 +19,8 @@ export interface SemanticAnswer {
   passage: string
   /** `true` when the passage came from a whole-article fallback search. */
   approximate: boolean
+  /** Article section the passage sits in; absent in the lead. */
+  section?: string
   title: string
   language: string
   url: string
@@ -156,6 +158,7 @@ export async function fetchSemanticAnswers(
       question: hit.question,
       passage: passage.text,
       approximate: passage.approximate,
+      section: passage.section,
       title: hit.title,
       language: hit.language,
       url: articleUrl(hit.title, hit.language),
@@ -173,15 +176,15 @@ function pluralize(count: number, noun: string): string {
   return `${count.toLocaleString()} ${noun}${count === 1 ? '' : 's'}`
 }
 
-/** "1,573 contributors • 42 references", skipping signals we couldn't load. */
+/** "1,573 editors • 42 sources", skipping signals we couldn't load. */
 export function formatAttributionLine(answer: SemanticAnswer): string {
   const parts: string[] = []
 
   if (typeof answer.contributors === 'number') {
-    parts.push(pluralize(answer.contributors, 'contributor'))
+    parts.push(pluralize(answer.contributors, 'editor'))
   }
   if (typeof answer.references === 'number' && answer.references > 0) {
-    parts.push(pluralize(answer.references, 'reference'))
+    parts.push(pluralize(answer.references, 'source'))
   }
 
   return parts.join(' • ')
