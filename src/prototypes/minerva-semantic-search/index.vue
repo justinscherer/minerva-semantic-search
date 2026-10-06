@@ -12,8 +12,7 @@ definePage({
 
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
-import { CdxButton, CdxIcon, CdxMessage, CdxProgressBar } from '@wikimedia/codex'
-import { cdxIconQuotes } from '@wikimedia/codex-icons'
+import { CdxButton, CdxMessage, CdxProgressBar } from '@wikimedia/codex'
 
 import ArticleLive from '@/components/article/ArticleLive.vue'
 import ChromeHeader from '@/components/chrome/ChromeHeader.vue'
@@ -42,7 +41,9 @@ import {
 /** Stand-in when the index can't be listed — `Cat` is reliably indexed. */
 const FALLBACK_ARTICLE = 'Cat'
 const TYPEAHEAD_DEBOUNCE_MS = 180
-const SKELETON_COUNT = 3
+const SEMANTIC_RESULT_LIMIT = 3
+/** One skeleton per answer the results page will show. */
+const SKELETON_COUNT = SEMANTIC_RESULT_LIMIT
 const ARTICLE_RESULT_LIMIT = 10
 /** Queries this long or longer read as questions and go to semantic search. */
 const SEMANTIC_WORD_THRESHOLD = 3
@@ -100,23 +101,6 @@ const hasNoResults = computed(
     !answers.value.length &&
     !articleResults.value.length,
 )
-
-/** "3 highlights • 4 articles", dropping a half that came back empty. */
-const resultCounts = computed(() => {
-  if (isSearching.value) return ''
-
-  const parts: string[] = []
-  if (answers.value.length) {
-    parts.push(`${answers.value.length} highlight${answers.value.length === 1 ? '' : 's'}`)
-  }
-  if (articleResults.value.length) {
-    parts.push(
-      `${articleResults.value.length} article${articleResults.value.length === 1 ? '' : 's'}`,
-    )
-  }
-
-  return parts.join(' • ')
-})
 
 const articleHeaderRight = computed((): HeaderItem[] => [
   { type: 'button', icon: 'search', label: 'Search', onClick: openSearch },
@@ -255,7 +239,11 @@ async function runSemanticSearch(value: string): Promise<void> {
   nextArticleOffset.value = null
 
   try {
-    const found = await fetchSemanticAnswers(trimmed, { lang: lang.value, signal })
+    const found = await fetchSemanticAnswers(trimmed, {
+      lang: lang.value,
+      limit: SEMANTIC_RESULT_LIMIT,
+      signal,
+    })
     if (signal.aborted) return
     answers.value = found
   } catch (error) {
@@ -438,18 +426,6 @@ void loadRelatedPages()
         </template>
 
         <template v-else>
-          <div class="mss__question">
-            <CdxIcon class="mss__question-icon" :icon="cdxIconQuotes" size="small" />
-            <div class="mss__question-text">
-              <p class="mss__question-query">
-                {{ semanticQuery }}
-              </p>
-              <p v-if="resultCounts" class="mss__question-counts">
-                {{ resultCounts }}
-              </p>
-            </div>
-          </div>
-
           <div
             v-if="isSearching || answers.length || searchError || hasNoResults"
             class="mss__answers"
@@ -564,40 +540,6 @@ void loadRelatedPages()
 
 .mss__body {
   flex: 1 1 auto;
-}
-
-.mss__question {
-  display: flex;
-  align-items: flex-start;
-  gap: var(--spacing-50, 8px);
-  padding: var(--spacing-50, 8px) var(--spacing-100, 16px);
-  border-bottom: var(--border-width-base, 1px) solid var(--border-color-subtle, #c8ccd1);
-}
-
-.mss__question-icon {
-  flex-shrink: 0;
-  margin-top: 2px;
-  color: var(--color-subtle, #54595d);
-}
-
-.mss__question-text {
-  display: flex;
-  flex: 1 1 auto;
-  min-width: 0;
-  flex-direction: column;
-}
-
-.mss__question-query {
-  margin: 0;
-  font-size: var(--font-size-medium, 1rem);
-  line-height: var(--line-height-small, 1.375);
-}
-
-.mss__question-counts {
-  margin: 0;
-  color: var(--color-subtle, #54595d);
-  font-size: var(--font-size-small, 0.875rem);
-  line-height: var(--line-height-x-small, 1.25);
 }
 
 .mss__answers {

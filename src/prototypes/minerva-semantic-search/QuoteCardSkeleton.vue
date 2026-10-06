@@ -18,9 +18,9 @@ import { cdxIconQuotes } from '@wikimedia/codex-icons'
     </div>
 
     <div class="mss-skeleton__source">
-      <span class="mss-skeleton__thumb" />
       <div class="mss-skeleton__source-lines">
         <span class="mss-skeleton__line mss-skeleton__line--35" />
+        <span class="mss-skeleton__line mss-skeleton__line--30" />
         <span class="mss-skeleton__line mss-skeleton__line--70" />
       </div>
     </div>
@@ -95,16 +95,6 @@ import { cdxIconQuotes } from '@wikimedia/codex-icons'
   gap: var(--spacing-50, 8px);
   padding: var(--spacing-50, 8px) 0 0 var(--spacing-50, 8px);
   border-top: var(--border-width-base, 1px) solid var(--border-color-muted, #dadde3);
-}
-
-.mss-skeleton__thumb {
-  flex-shrink: 0;
-  box-sizing: border-box;
-  width: var(--size-250, 40px);
-  height: var(--size-250, 40px);
-  border: var(--border-width-base, 1px) solid var(--border-color-subtle, #c8ccd1);
-  border-radius: var(--border-radius-base, 2px);
-  background-color: var(--background-color-neutral-subtle, #f8f9fa);
 }
 
 .mss-skeleton__source-lines {
