@@ -189,6 +189,17 @@ export function articleUrl(title: string, lang = 'en'): string {
   return `https://${wikiHostFromLang(lang)}/wiki/${encodeURIComponent(title.replace(/ /g, '_'))}`
 }
 
+/** Production `Special:Search` results page for a query. */
+export function specialSearchUrl(query: string, lang = 'en'): string {
+  const params = new URLSearchParams({ search: query.trim() })
+  return `https://${wikiHostFromLang(lang)}/wiki/Special:Search?${params.toString()}`
+}
+
+/** Whitespace-separated word count, used to route a submitted query. */
+export function countWords(query: string): number {
+  return query.trim().split(/\s+/).filter(Boolean).length
+}
+
 export interface ArticleSearchResult {
   pageid: number
   title: string

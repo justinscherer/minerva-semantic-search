@@ -25,15 +25,16 @@ import PageSuggestionList from './PageSuggestionList.vue'
 import QuoteCard from './QuoteCard.vue'
 import QuoteCardSkeleton from './QuoteCardSkeleton.vue'
 import SearchHeader from './SearchHeader.vue'
-import SemanticEntryPoint from './SemanticEntryPoint.vue'
 import { askArticles, askQuestions, isReadableIndexTitle, normalizeIndexTitle } from './askApi'
 import { clearPassageHighlight, highlightPassage } from './highlightPassage'
 import { fetchSemanticAnswers, type SemanticAnswer } from './semanticAnswers'
 import ArticleSearchResults from './ArticleSearchResults.vue'
 import {
+  countWords,
   fetchArticleSearchResults,
   fetchRelatedPages,
   fetchTypeaheadPages,
+  specialSearchUrl,
   type ArticleSearchResult,
   type WikiPageSummary,
 } from './wikiPages'
@@ -43,6 +44,8 @@ const FALLBACK_ARTICLE = 'Cat'
 const TYPEAHEAD_DEBOUNCE_MS = 180
 const SKELETON_COUNT = 3
 const ARTICLE_RESULT_LIMIT = 10
+/** Queries this long or longer read as questions and go to semantic search. */
+const SEMANTIC_WORD_THRESHOLD = 3
 
 type Screen = 'article' | 'search'
 type SearchView = 'suggestions' | 'typeahead' | 'semantic'
@@ -83,7 +86,6 @@ let relatedAbort: AbortController | null = null
 let debounceHandle: ReturnType<typeof setTimeout> | undefined
 
 const trimmedQuery = computed(() => query.value.trim())
-const showEntryPoint = computed(() => trimmedQuery.value.length >= 3)
 
 /** Neither the index nor full-text search had anything for this query. */
 const hasNoResults = computed(
@@ -280,9 +282,24 @@ async function runSemanticSearch(value: string): Promise<void> {
   }
 }
 
+/**
+ * Submitting a search splits two ways: keyword-shaped queries go to the
+ * production `Special:Search` page, question-shaped ones to the semantic
+ * results page.
+ */
 function onSubmit(value: string): void {
   if (debounceHandle) clearTimeout(debounceHandle)
-  void runSemanticSearch(value)
+
+  const trimmed = value.trim()
+  if (!trimmed.length) return
+
+  if (countWords(trimmed) >= SEMANTIC_WORD_THRESHOLD) {
+    void runSemanticSearch(trimmed)
+    return
+  }
+
+  // Leaves the prototype — production Wikipedia handles short queries.
+  window.location.assign(specialSearchUrl(trimmed, lang.value))
 }
 
 function openArticle(title: string, passage: string | null = null): void {
@@ -377,11 +394,6 @@ void loadRelatedPages()
         </template>
 
         <template v-else-if="searchView === 'typeahead'">
-          <SemanticEntryPoint
-            v-if="showEntryPoint"
-            :query="trimmedQuery"
-            @find="runSemanticSearch"
-          />
           <PageSuggestionList :pages="typeaheadPages" @select="onSelectPage" />
         </template>
 
